@@ -1,0 +1,12 @@
+*IYF iShares Dow Jones US Financials  0.40 19.23%
+VFH Vanguard Financials ETF 0.10 16.87%
+
+*IJR iShares S&P SmallCap 600 ETF  0.06 9.05%
+
+IYR iShares Dow Jones US Real Estate 0.40 3.77%
+USRT iShares Core US REIT ETF 0.08 6.41%
+VNQ Vanguard US REIT fund 0.13 2.57%
+
+XLI Industrials Select Sector SPDR 0.09 12.29%
+*VIS Vanguard Industrials ETF 0.10 13.42%
+
