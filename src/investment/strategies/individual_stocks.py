@@ -68,7 +68,7 @@ def individual_stocks_flow():
 
     prep_investment_breakdown(
         symbols,
-        config['sector_momentum']['investment_capital'],
-        config['sector_momentum']['hold_symbol'],
-        config['sector_momentum']['score_threshold'],
+        config['individual_stocks']['investment_capital'],
+        config['individual_stocks']['hold_symbol'],
+        config['individual_stocks']['score_threshold'],
     )
