@@ -15,6 +15,7 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/investment"]
+artifacts = ["src/investment/config/*.yaml"]
 
 [dependency-groups]
 dev = [
