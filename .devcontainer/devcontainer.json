@@ -1,0 +1,29 @@
+{
+  "name": "investment",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "ms-python.python",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "python.typeCheckingMode": "off",
+        "mypy-type-checker.enabled": true,
+        "ruff.lineLength": 100
+      }
+    }
+  },
+  "postCreateCommand": "uv sync --all-groups",
+  "remoteUser": "vscode"
+}
