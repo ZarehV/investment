@@ -1,0 +1,76 @@
+individual_stocks:
+  interval: '1mo'
+  debug: true
+  score_threshold: 0.03 #To be revised
+  investment_capital: 100000
+  bitcoin_symbol: 'HODL'
+  hold_symbol: 'BSV'
+  resample: 'ME'
+  top_n: 20
+  periods:
+    months:
+      3:
+      6:
+      9:
+      12:
+  assets:
+    SHLD:
+    XOP:
+    JEPI:
+    QQA:
+
+
+sector_momentum:
+  interval: '1mo'
+  debug: true
+  score_threshold: 0.04 #To be revised
+  investment_capital: 100000
+  bitcoin_symbol: 'HODL'
+  hold_symbol: 'BSV'
+  resample: 'ME'
+  top_n: 4
+  periods:
+    months:
+      3:
+      6:
+      9:
+      12:
+  assets:
+    XLK:
+    XLV:
+    XLF:
+    XLY:
+    XLP:
+    XLE:
+    XLI:
+    XLB:
+    XLU:
+    XLRE:
+    XLC:
+
+momentumrider:
+  interval: '1mo'
+  debug: true
+  score_threshold: 0.04 #To be revised
+  investment_capital: 120000
+  bitcoin_symbol: 'HODL'
+  hold_symbol: 'BSV'
+  resample: 'ME'
+  top_n: 5
+  periods:
+    months:
+      3:
+      6:
+      9:
+      12:
+  assets:
+    VTI:
+    VEA:
+    VWO:
+    VGIT:
+    SPTI:
+    BCI:
+    SGOL:
+    HODL:
+    BND:
+

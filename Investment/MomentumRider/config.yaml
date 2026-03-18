@@ -1,0 +1,26 @@
+
+momentumrider:
+  interval: '1d'
+  debug: false
+  score_threshold: 0.01 #To be revised
+  investment_capital: 100000
+  bitcoin_symbol: 'HODL'
+  resample: 'ME'
+  periods:
+    months:
+      3:
+      6:
+      9:
+      12:
+  assets:
+    VTI:
+    VEA:
+    VWO:
+    VGIT:
+    SPTI:
+    BCI:
+    SGOL:
+    HODL:
+    BND:
+    SPLG:
+
