@@ -4,18 +4,22 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
+
 def load_config():
     with open("config.yaml", "r") as file:
         config = yaml.safe_load(file)
     return config
 
+
 def get_data(symbols, start_date, interval):
-    data = yf.download(symbols, start=start_date.strftime('%Y-%m-%d'),  interval=interval)['Close']
+    data = yf.download(symbols, start=start_date.strftime("%Y-%m-%d"), interval=interval)["Close"]
     return data
+
 
 def get_return(data):
     return_pd = data.pct_change()
     return return_pd
+
 
 def get_top_assets(symbols, returns_pd, periods, bitcoin_symbol, total_periods=12, top_n=4):
     print("Calculating momentum scores...")
@@ -30,29 +34,38 @@ def get_top_assets(symbols, returns_pd, periods, bitcoin_symbol, total_periods=1
         avg_return = total / len(periods)
         momentum_scores[symbol] = avg_return
 
-    momentum_df = pd.DataFrame.from_dict(momentum_scores, orient='index', columns=['momentum_score'])
-    top_momentum_df = momentum_df.sort_values(by='momentum_score', ascending=False).reset_index().rename(
-        columns={'index': 'symbol'}).head(top_n)
+    momentum_df = pd.DataFrame.from_dict(
+        momentum_scores, orient="index", columns=["momentum_score"]
+    )
+    top_momentum_df = (
+        momentum_df.sort_values(by="momentum_score", ascending=False)
+        .reset_index()
+        .rename(columns={"index": "symbol"})
+        .head(top_n)
+    )
     is_bitcoin_in_top = False
-    for top_symbol in top_momentum_df['symbol'].unique():
+    for top_symbol in top_momentum_df["symbol"].unique():
         if bitcoin_symbol == top_symbol:
             is_bitcoin_in_top = True
 
     if is_bitcoin_in_top:
         print("Bitcoin is in the top 4...")
-        top_momentum_df = momentum_df.sort_values(by='momentum_score', ascending=False).reset_index().rename(
-            columns={'index': 'symbol'}).head(top_n + 1)
+        top_momentum_df = (
+            momentum_df.sort_values(by="momentum_score", ascending=False)
+            .reset_index()
+            .rename(columns={"index": "symbol"})
+            .head(top_n + 1)
+        )
 
     return top_momentum_df, is_bitcoin_in_top
-
 
 
 def identify_support(
     symbol: str,
     period: str = "1mo",
     interval: str = "1d",
-    price_choice: str = "top",   # "top", "mid", or "bottom"
-    weights: dict | None = None, # {"dist":0.45,"hits":0.35,"fresh":0.15,"tight":0.05}
+    price_choice: str = "top",  # "top", "mid", or "bottom"
+    weights: dict | None = None,  # {"dist":0.45,"hits":0.35,"fresh":0.15,"tight":0.05}
     auto_adjust: bool = True,
 ):
     """
@@ -85,9 +98,10 @@ def identify_support(
     best_zone      : pandas.Series | None   (columns: zone_low, zone_high, touches, score, …)
     price_df       : pandas.DataFrame       (the downloaded OHLCV data)
     """
+
     # ------------------------------------------------------------------ helpers
     def clustered_lows(df, bins=50, threshold=3):
-        hist, edges = np.histogram(df['Low'], bins=bins)
+        hist, edges = np.histogram(df["Low"], bins=bins)
         zones, run = [], None
         for i, hits in enumerate(hist):
             if hits >= threshold:
@@ -104,7 +118,7 @@ def identify_support(
 
     # ------------------------------------------------------------------ download
     start_date = datetime.today() - timedelta(days=60 * 1.1)
-    df = yf.download(symbol, start=start_date.strftime('%Y-%m-%d'), interval='1d').dropna()
+    df = yf.download(symbol, start=start_date.strftime("%Y-%m-%d"), interval="1d").dropna()
     clustered_lows(df)
     if df.empty:
         raise ValueError("No data returned; check ticker/period/interval")
@@ -118,7 +132,7 @@ def identify_support(
 
     # ------------------------------------------------------------------ scores
     zones = zones.copy()
-    zones["dist"] = close - zones["zone_high"]                   # lower = closer → stronger
+    zones["dist"] = close - zones["zone_high"]  # lower = closer → stronger
     low_series = df["Low"]
     if isinstance(low_series, pd.DataFrame):  # happens only with MultiIndex cols
         low_series = low_series.iloc[:, 0]  # pick the first (only) column
@@ -126,8 +140,8 @@ def identify_support(
     zones["fresh"] = [
         (df.index[-1] - low_series[low_series.between(lo, hi)].index.max()).days
         for lo, hi in zip(zones.zone_low, zones.zone_high)
-    ]                                                           # lower = fresher
-    zones["tight"] = zones["zone_high"] - zones["zone_low"]      # lower = tighter
+    ]  # lower = fresher
+    zones["tight"] = zones["zone_high"] - zones["zone_low"]  # lower = tighter
 
     # normalise 0-1; invert columns where ‘smaller is better’
     for col in ["dist", "fresh", "tight"]:
@@ -142,10 +156,10 @@ def identify_support(
     w = weights
 
     zones["score"] = (
-        w["dist"] * zones["dist"] +
-        w["hits"] * zones["hits"] +
-        w["fresh"] * zones["fresh"] +
-        w["tight"] * zones["tight"]
+        w["dist"] * zones["dist"]
+        + w["hits"] * zones["hits"]
+        + w["fresh"] * zones["fresh"]
+        + w["tight"] * zones["tight"]
     )
 
     best = zones.sort_values("score", ascending=False).iloc[0]
@@ -160,57 +174,63 @@ def identify_support(
 
     return float(round(support, 2)), best, df
 
-def prep_investment_breakdown(top_momentum_df, investment_capital, bitcoin_symbol, hold_symbold, score_threshold, is_bitcoin_in_top=False):
+
+def prep_investment_breakdown(
+    top_momentum_df,
+    investment_capital,
+    bitcoin_symbol,
+    hold_symbold,
+    score_threshold,
+    is_bitcoin_in_top=False,
+):
     investment_allocation = {}
     hold_folds = 0
     for index, row in top_momentum_df.iterrows():
-        symbol = row['symbol']
-        score = row['momentum_score']
+        symbol = row["symbol"]
+        score = row["momentum_score"]
         if score < score_threshold:
             print(f"Skipping {symbol} due to low momentum score: {score}")
             hold_folds += 1
             continue
         stock = yf.Ticker(symbol)
-        price = stock.info['regularMarketPrice']
+        price = stock.info["regularMarketPrice"]
         support, zone, df = identify_support(symbol)
 
         if symbol == bitcoin_symbol:
             investment_allocation[symbol] = {
-                'price': price,
-                'amount_to_invest': investment_capital * 0.04,
-                'num_shares': int((investment_capital * 0.04) / price),
-                'support': support,
-                'zone': zone,
-
+                "price": price,
+                "amount_to_invest": investment_capital * 0.04,
+                "num_shares": int((investment_capital * 0.04) / price),
+                "support": support,
+                "zone": zone,
             }
         elif symbol != bitcoin_symbol and is_bitcoin_in_top:
             investment_allocation[symbol] = {
-                'price': price,
-                'amount_to_invest': investment_capital * 0.24,
-                'num_shares': int((investment_capital * 0.24) / price),
-                'support': support,
-                'zone': zone,
-
+                "price": price,
+                "amount_to_invest": investment_capital * 0.24,
+                "num_shares": int((investment_capital * 0.24) / price),
+                "support": support,
+                "zone": zone,
             }
         else:
             investment_allocation[symbol] = {
-                'price': price,
-                'amount_to_invest': investment_capital * 0.25,
-                'num_shares': int((investment_capital * 0.25) / price),
-                'support': support,
-                'zone': zone,
+                "price": price,
+                "amount_to_invest": investment_capital * 0.25,
+                "num_shares": int((investment_capital * 0.25) / price),
+                "support": support,
+                "zone": zone,
             }
 
     if hold_folds > 0:
         stock = yf.Ticker(symbol)
-        price = stock.info['regularMarketPrice']
+        price = stock.info["regularMarketPrice"]
         support, zone, df = identify_support(symbol)
         investment_allocation[hold_symbold] = {
-            'price': price,
-            'amount_to_invest': investment_capital * 0.25,
-            'num_shares': int((investment_capital * 0.25) / price),
-            'support': support,
-            'zone': zone,
+            "price": price,
+            "amount_to_invest": investment_capital * 0.25,
+            "num_shares": int((investment_capital * 0.25) / price),
+            "support": support,
+            "zone": zone,
         }
     for symbol, allocation in investment_allocation.items():
         print(f"Investment for {symbol}:")
@@ -218,34 +238,34 @@ def prep_investment_breakdown(top_momentum_df, investment_capital, bitcoin_symbo
         print(f"  Amount to Invest: {allocation['amount_to_invest']}")
         print(f"  Number of Shares: {allocation['num_shares']}")
         print(f"  Support: {allocation['support']}")
-        #print(f"  Zone: {allocation['zone']}")
+        # print(f"  Zone: {allocation['zone']}")
+
 
 def main():
     config = load_config()
     print("Loaded configuration")
     start_date = datetime.today() - timedelta(days=365 * 1.1)
-    symbols = list(config['momentumrider']['assets'].keys())
-    daily_data_pd = get_data(symbols, start_date, config['momentumrider']['interval'])
-    if config['momentumrider']['debug']:
-        daily_data_pd.to_csv('momentum_rider_raw.csv')
+    symbols = list(config["momentumrider"]["assets"].keys())
+    daily_data_pd = get_data(symbols, start_date, config["momentumrider"]["interval"])
+    if config["momentumrider"]["debug"]:
+        daily_data_pd.to_csv("momentum_rider_raw.csv")
     returns_pd = get_return(daily_data_pd)
-    if config['momentumrider']['debug']:
-        returns_pd.to_csv('returns.csv')
+    if config["momentumrider"]["debug"]:
+        returns_pd.to_csv("returns.csv")
     top_momentum_df, is_bitcoin_in_top = get_top_assets(
         symbols,
         returns_pd,
-        list(config['momentumrider']['periods']['months'].keys()),
-        config['momentumrider']['bitcoin_symbol']
+        list(config["momentumrider"]["periods"]["months"].keys()),
+        config["momentumrider"]["bitcoin_symbol"],
     )
     prep_investment_breakdown(
         top_momentum_df,
-        config['momentumrider']['investment_capital'],
-        config['momentumrider']['bitcoin_symbol'],
-        config['momentumrider']['score_threshold'],
-        is_bitcoin_in_top
+        config["momentumrider"]["investment_capital"],
+        config["momentumrider"]["bitcoin_symbol"],
+        config["momentumrider"]["score_threshold"],
+        is_bitcoin_in_top,
     )
+
 
 if __name__ == "__main__":
     main()
-
-
