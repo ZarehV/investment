@@ -3,14 +3,15 @@ import pandas as pd
 from datetime import datetime, timedelta
 import yfinance as yf
 from investment.strategies.common import (
-    load_config,
+    clustered_lows,
+    get_all_data,
+    get_assets_by_momentum,
     get_closing_data,
     get_return,
-    get_assets_by_momentum,
-    get_top_assets,
-    get_all_data,
-    swing_lows,
     get_symbol_current_data,
+    get_top_assets,
+    load_config,
+    swing_lows,
 )
 
 EXECUTION_HISTORY = "sector_momentum_execution_history.csv"
@@ -33,9 +34,23 @@ def prep_investment_breakdown(top_momentum_df, investment_capital, hold_symbol, 
         stock = get_symbol_current_data(symbol)
         price = stock.info["regularMarketPrice"]
 
-        start_date = datetime.today() - timedelta(days=15)
-        data_df = get_all_data(symbol, start_date, "1d")
-        swing_lows_df = swing_lows(data_df)
+        # Long-term support (90 days) — for bi-weekly rebalancing decisions
+        long_data_df = get_all_data(symbol, datetime.today() - timedelta(days=90), "1d")
+        long_swing_lows_df = swing_lows(long_data_df)
+        long_zones = clustered_lows(long_data_df)
+        if not long_zones.empty:
+            best_zone = long_zones.sort_values("touches", ascending=False).iloc[0]
+            support_long = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
+            support_long_date = None
+        else:
+            support_long = long_swing_lows_df.min()
+            support_long_date = long_swing_lows_df.idxmin()
+
+        # Short-term support (15 days) — for weekly stop-loss adjustments
+        short_data_df = get_all_data(symbol, datetime.today() - timedelta(days=15), "1d")
+        short_swing_lows_df = swing_lows(short_data_df)
+        support_short = short_swing_lows_df.min()
+        support_short_date = short_swing_lows_df.idxmin()
 
         investment_pct = check_investment_percentage()
         investment_allocation[symbol] = {
@@ -44,17 +59,33 @@ def prep_investment_breakdown(top_momentum_df, investment_capital, hold_symbol, 
             "amount_to_invest": investment_capital * investment_pct,
             "num_shares": int((investment_capital * investment_pct) / price),
             "investment_pct": investment_pct,
-            "support": swing_lows_df.min(),
-            "support_date": swing_lows_df.idxmin(),
+            "support_long": support_long,
+            "support_long_date": support_long_date,
+            "support_short": support_short,
+            "support_short_date": support_short_date,
         }
 
     if hold_folds > 0:
         print(f"Investment folds: {hold_folds} for {hold_symbol}")
         stock = yf.Ticker(hold_symbol)
         price = stock.info["regularMarketPrice"]
-        start_date = datetime.today() - timedelta(days=15)
-        data_df = get_all_data(hold_symbol, start_date, "1d")
-        swing_lows_df = swing_lows(data_df)
+
+        long_data_df = get_all_data(hold_symbol, datetime.today() - timedelta(days=90), "1d")
+        long_swing_lows_df = swing_lows(long_data_df)
+        long_zones = clustered_lows(long_data_df)
+        if not long_zones.empty:
+            best_zone = long_zones.sort_values("touches", ascending=False).iloc[0]
+            support_long = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
+            support_long_date = None
+        else:
+            support_long = long_swing_lows_df.min()
+            support_long_date = long_swing_lows_df.idxmin()
+
+        short_data_df = get_all_data(hold_symbol, datetime.today() - timedelta(days=15), "1d")
+        short_swing_lows_df = swing_lows(short_data_df)
+        support_short = short_swing_lows_df.min()
+        support_short_date = short_swing_lows_df.idxmin()
+
         investment_pct = check_investment_percentage()
         investment_pct = investment_pct * hold_folds
         investment_allocation[hold_symbol] = {
@@ -63,8 +94,10 @@ def prep_investment_breakdown(top_momentum_df, investment_capital, hold_symbol, 
             "amount_to_invest": investment_capital * investment_pct,
             "num_shares": int((investment_capital * investment_pct) / price),
             "investment_pct": investment_pct,
-            "support": swing_lows_df.min(),
-            "support_date": swing_lows_df.idxmin(),
+            "support_long": support_long,
+            "support_long_date": support_long_date,
+            "support_short": support_short,
+            "support_short_date": support_short_date,
         }
 
     for symbol, allocation in investment_allocation.items():
@@ -74,8 +107,8 @@ def prep_investment_breakdown(top_momentum_df, investment_capital, hold_symbol, 
         print(f"  Amount to Invest: {allocation['amount_to_invest']}")
         print(f"  Number of Shares: {allocation['num_shares']}")
         print(f"  Investment Percentage: {allocation['investment_pct']}")
-        print(f"  Support: {allocation['support']}")
-        print(f"  Support Date: {allocation['support_date']}")
+        print(f"  Support (90d): {allocation['support_long']}  [{allocation['support_long_date']}]")
+        print(f"  Support (15d): {allocation['support_short']}  [{allocation['support_short_date']}]")
 
     if os.path.exists(EXECUTION_HISTORY):
         df = pd.DataFrame.from_dict(investment_allocation, orient="index")
