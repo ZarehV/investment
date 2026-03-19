@@ -299,7 +299,10 @@ def clustered_lows(
         DataFrame with columns ``zone_low``, ``zone_high``, and ``touches``.
         Empty if no qualifying zones are found.
     """
-    hist, edges = np.histogram(df["Low"], bins=bins)
+    lows = df["Low"].dropna()
+    if lows.empty:
+        return pd.DataFrame(columns=["zone_low", "zone_high", "touches"])
+    hist, edges = np.histogram(lows, bins=bins)
     zones: list[tuple[float, float, int]] = []
     run: list[Any] | None = None
 

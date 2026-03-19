@@ -81,7 +81,11 @@ def prep_investment_breakdown(
         if not long_zones.empty:
             best_zone = long_zones.sort_values("touches", ascending=False).iloc[0]
             support_long: float = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
-            support_long_date = None
+            zone_touches = long_swing_lows_df[
+                (long_swing_lows_df >= best_zone["zone_low"])
+                & (long_swing_lows_df <= best_zone["zone_high"])
+            ]
+            support_long_date = zone_touches.index[-1] if not zone_touches.empty else None
         else:
             support_long = long_swing_lows_df.min()
             support_long_date = long_swing_lows_df.idxmin()
@@ -119,7 +123,11 @@ def prep_investment_breakdown(
         if not long_zones.empty:
             best_zone = long_zones.sort_values("touches", ascending=False).iloc[0]
             support_long = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
-            support_long_date = None
+            zone_touches = long_swing_lows_df[
+                (long_swing_lows_df >= best_zone["zone_low"])
+                & (long_swing_lows_df <= best_zone["zone_high"])
+            ]
+            support_long_date = zone_touches.index[-1] if not zone_touches.empty else None
         else:
             support_long = long_swing_lows_df.min()
             support_long_date = long_swing_lows_df.idxmin()
