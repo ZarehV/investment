@@ -1,28 +1,72 @@
-import os
-import pandas as pd
+"""Investment journal — persistence and interactive CLI helpers.
+
+Manages a CSV-backed journal of investment positions.  Provides functions
+to open, update, and close positions with full P&L tracking.
+
+The journal file path is controlled by the ``JOURNAL_PATH`` environment
+variable (default: ``journals/final_investment.csv``).
+"""
+
 import json
+import os
 import re
+from typing import Any
 
-file_name = os.getenv("JOURNAL_PATH", "journals/final_investment.csv")
+import pandas as pd
 
-def printrecord(record):
+_JOURNAL_PATH: str = os.getenv("JOURNAL_PATH", "journals/final_investment.csv")
+
+_ACCOUNT_CODES: dict[str, str] = {
+    "TS": "TradeStation Sim",
+    "TSL": "TradeStation Live",
+    "RI": "Robinhood Investment",
+    "RR": "Robinhood Retirement",
+}
+
+_DATE_PATTERN: re.Pattern[str] = re.compile(r"^(0[1-9]|1[0-2])/([0-2][0-9]|3[01])/([0-9]{4})$")
+
+
+def printrecord(record: dict[str, Any]) -> None:
+    """Pretty-print a single investment record to stdout.
+
+    Args:
+        record: Dictionary representation of one journal row.
+    """
     print("*****RECORD*****")
-    print(json.dumps(record, indent=1))
+    print(json.dumps(record, indent=1, default=str))
     print("****************")
 
-def get_journal():
-    return pd.read_csv(file_name)
 
-def get_position():
+def get_journal() -> pd.DataFrame:
+    """Load the investment journal from the configured CSV file.
+
+    Returns:
+        DataFrame with one row per investment position.
+    """
+    return pd.read_csv(_JOURNAL_PATH)
+
+
+def get_position() -> None:
+    """Interactively look up and display a position by its journal key."""
     investments_pd = get_journal()
-    key = input("Povide position ID?")
-    if len(investments_pd[investments_pd['key'] == key]) > 0:
-        record = investments_pd[investments_pd['key'] == key].iloc[0].to_dict()
-        printrecord(record)
+    key = input("Provide position ID: ")
+    matches = investments_pd[investments_pd["key"] == key]
+    if len(matches) > 0:
+        printrecord(matches.iloc[0].to_dict())
     else:
-        print(f"Record with key {key} does not exists")
+        print(f"Record with key '{key}' does not exist.")
 
-def input_int_with_default(prompt, default):
+
+def input_int_with_default(prompt: str, default: int | float) -> int | float:
+    """Prompt the user for an integer, returning *default* on empty input.
+
+    Args:
+        prompt: Message shown to the user.
+        default: Value returned when the user presses Enter without typing.
+
+    Returns:
+        User-provided integer or *default*.
+    """
     while True:
         user_input = input(f"{prompt} (recommended: {default}): ")
         if user_input == "":
@@ -30,9 +74,19 @@ def input_int_with_default(prompt, default):
         try:
             return int(user_input)
         except ValueError:
-            print("Invalid input. Please enter a valid float.")
+            print("Invalid input. Please enter a valid integer.")
 
-def input_float_with_default(prompt, default=None):
+
+def input_float_with_default(prompt: str, default: float | None = None) -> float | None:
+    """Prompt the user for a float, returning *default* on empty input.
+
+    Args:
+        prompt: Message shown to the user.
+        default: Value returned when the user presses Enter without typing.
+
+    Returns:
+        User-provided float or *default*.
+    """
     while True:
         user_input = input(f"{prompt} (recommended: {default}): ")
         if user_input == "":
@@ -42,110 +96,135 @@ def input_float_with_default(prompt, default=None):
         except ValueError:
             print("Invalid input. Please enter a valid float.")
 
-def add_details_to_new_position(new_investment):
-    date_change = input("Open Date other than today Y/N:")
-    if date_change == 'Y':
+
+def add_details_to_new_position(new_investment: dict[str, Any]) -> dict[str, Any]:
+    """Interactively collect open date, account, and reason for a new position.
+
+    Prompts the user for:
+
+    * An optional custom open date (defaults to today).
+    * The brokerage account code (``TS``, ``TSL``, ``RI``, or ``RR``).
+    * A free-text reason for opening the position.
+
+    Args:
+        new_investment: Partially populated position dictionary; modified
+            in-place with ``purchase_date``, ``investment_account``, and
+            ``investment_reason``.
+
+    Returns:
+        The updated *new_investment* dictionary.
+    """
+    if input("Open Date other than today? Y/N: ").strip().upper() == "Y":
         while True:
-            purchase_date = input("Open Date (as mm/dd/yyyy):")
-            date_pattern = re.compile(r'^(0[1-9]|1[0-2])/([0-2][0-9]|3[01])/([0-9]{4})$')
-            if date_pattern.match(purchase_date):
-                new_investment['purchase_date'] = purchase_date
+            purchase_date = input("Open Date (mm/dd/yyyy): ").strip()
+            if _DATE_PATTERN.match(purchase_date):
+                new_investment["purchase_date"] = purchase_date
                 break
-            else:
-                print("Invalid input. Please enter a valid float.")
+            print("Invalid date format. Please use mm/dd/yyyy.")
 
+    account_options = ", ".join(f"{k} = {v}" for k, v in _ACCOUNT_CODES.items())
     while True:
-        investment_account = input("Provide Account Name TradeStation Sim (TS) or TradeStation Live (TSL) or Robinhood Investment (RI) or Robinhood Retirement (RR):")
-        if investment_account in ['TS', 'TSL', 'RI', 'RR']:
-            match investment_account:
-                case 'TS':
-                    new_investment['investment_account'] = 'TradeStation Sim'
-                case 'TSL':
-                    new_investment['investment_account'] = 'TradeStation Live'
-                case 'RI':
-                    new_investment['investment_account'] = 'Robinhood Investment'
-                case 'RR':
-                    new_investment['investment_account'] = 'Robinhood Retirement'
+        code = input(f"Account ({account_options}): ").strip().upper()
+        if code in _ACCOUNT_CODES:
+            new_investment["investment_account"] = _ACCOUNT_CODES[code]
             break
-        else:
-            print("Invalid input. Please enter a valid account name.")
+        print("Invalid account code. Please choose from: " + ", ".join(_ACCOUNT_CODES))
 
-    investment_reason = input("Provide reason for Opening Position:")
-    new_investment['investment_reason'] = investment_reason
+    new_investment["investment_reason"] = input("Reason for opening position: ")
     return new_investment
 
-def save_new_entry(new_investment):
+
+def save_new_entry(new_investment: dict[str, Any]) -> None:
+    """Persist a new position to the journal, prompting for details first.
+
+    If a record with the same key already exists the user is asked whether to
+    overwrite it.
+
+    Args:
+        new_investment: Position dictionary.  Must contain a ``key`` field
+            (typically generated by :func:`~investment.common.utils.compute_hash`).
+    """
     add_details_to_new_position(new_investment)
     investment_pd = get_journal()
+    existing = investment_pd[investment_pd["key"] == new_investment["key"]]
 
-    if len(investment_pd[investment_pd['key'] == new_investment['key']].index) > 0:
+    if len(existing.index) > 0:
         print(
-            f"Investment {new_investment['symbol']} on investment account {new_investment['investment_account']} with date {new_investment['purchase_date']} already exists")
-        if input("Overwrite record Y/N?").lower() == 'n':
+            f"Investment {new_investment['symbol']} on "
+            f"{new_investment['investment_account']} dated "
+            f"{new_investment['purchase_date']} already exists."
+        )
+        if input("Overwrite record? Y/N: ").lower() != "y":
             return
-        else:
-            index_to_update = investment_pd[investment_pd['key'] == new_investment['key']].index[0]
-            print(f"Record to update is {index_to_update}")
-            for key, value in new_investment.items():
-                investment_pd.at[index_to_update, key] = value
-            final_investment_pd = investment_pd.copy()
+        idx = existing.index[0]
+        for key, value in new_investment.items():
+            investment_pd.at[idx, key] = value
+        final_pd = investment_pd.copy()
     else:
-        investment_new_pd = pd.DataFrame([new_investment])
-        final_investment_pd = pd.concat([investment_pd, investment_new_pd])
+        final_pd = pd.concat([investment_pd, pd.DataFrame([new_investment])])
 
-    # final_investment_pd.drop_duplicates(subset='key', inplace=True)
-    final_investment_pd.fillna('')
-    final_investment_pd.to_csv(file_name, index=False)
+    final_pd.fillna("")
+    final_pd.to_csv(_JOURNAL_PATH, index=False)
     print(
-        f"New investment {new_investment['symbol']} on investment account {new_investment['investment_account']} with date {new_investment['purchase_date']} was stored in record with id {new_investment['key']}")
-    return
+        f"Investment {new_investment['symbol']} on "
+        f"{new_investment['investment_account']} dated "
+        f"{new_investment['purchase_date']} saved with key {new_investment['key']}."
+    )
 
 
-def close_position():
+def close_position() -> bool:
+    """Interactively close an open position and record the P&L.
+
+    Prompts the user for the position ID, filled exit price, closing date,
+    and exit comments.  Computes absolute and percentage P&L, updates the
+    journal row, and persists the file.
+
+    Returns:
+        ``True`` if the position was found and closed; ``False`` otherwise.
+    """
     investments_pd = get_journal()
-    key = input("Which is the position id to close")
-    if len(investments_pd[investments_pd['key'] == key]) > 0:
-        index = investments_pd[investments_pd['key'] == key].index
-        record = investments_pd[investments_pd['key'] == key].iloc[0].to_dict()
+    key = input("Position ID to close: ").strip()
+    matches = investments_pd[investments_pd["key"] == key]
 
-        printrecord(record)
-
-        while True:
-            try:
-                filled_price = float(input("Which was the final filled price? "))
-                print(f"The filled price is: {filled_price}")
-                break
-            except ValueError:
-                print("Invalid input. Please enter a valid float value.")
-        investments_pd.loc[index, 'final_filled_price'] = filled_price
-
-        while True:
-            closing_date = input("Closing Date (as mm/dd/yyyy):")
-            date_pattern = re.compile(r'^(0[1-9]|1[0-2])/([0-2][0-9]|3[01])/([0-9]{4})$')
-            if date_pattern.match(closing_date):
-                break
-            else:
-                print("Invalid input. Please enter a valid float.")
-
-        investments_pd.loc[index, 'closing_date'] = closing_date
-
-        exit_comments = input("Provide exit comments:")
-        investments_pd.loc[index, 'exit_comments'] = exit_comments
-
-
-        final_PL = record['position_size'] * filled_price - record['position_size'] * record['purchase_price']
-        investments_pd.loc[index, 'final_PL'] = final_PL
-
-        final_pct_revenue = round(final_PL / (record['position_size'] * record['purchase_price']), 5)
-        investments_pd.loc[index, 'final_pct_revenue'] = final_pct_revenue
-
-        investments_pd.loc[index, 'status'] = "close"
-
-        print(
-            f"Position for {record['symbol']} closed with filled price of {filled_price}, revenue of {final_PL}, which represents {final_pct_revenue * 100}%")
-        investments_pd.fillna('')
-        investments_pd.to_csv(file_name, index=False)
-        return True
-    else:
-        print(f"Record with key {key} does not exists")
+    if len(matches) == 0:
+        print(f"Record with key '{key}' does not exist.")
         return False
+
+    index = matches.index
+    record = matches.iloc[0].to_dict()
+    printrecord(record)
+
+    while True:
+        try:
+            filled_price = float(input("Final filled price: "))
+            break
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+    while True:
+        closing_date = input("Closing Date (mm/dd/yyyy): ").strip()
+        if _DATE_PATTERN.match(closing_date):
+            break
+        print("Invalid date format. Please use mm/dd/yyyy.")
+
+    exit_comments = input("Exit comments: ")
+
+    final_pnl = (
+        record["position_size"] * filled_price - record["position_size"] * record["purchase_price"]
+    )
+    final_pct = round(final_pnl / (record["position_size"] * record["purchase_price"]), 5)
+
+    investments_pd.loc[index, "final_filled_price"] = filled_price
+    investments_pd.loc[index, "closing_date"] = closing_date
+    investments_pd.loc[index, "exit_comments"] = exit_comments
+    investments_pd.loc[index, "final_PL"] = final_pnl
+    investments_pd.loc[index, "final_pct_revenue"] = final_pct
+    investments_pd.loc[index, "status"] = "close"
+
+    print(
+        f"Position for {record['symbol']} closed at {filled_price} — "
+        f"P&L: {final_pnl:.2f} ({final_pct * 100:.2f} %)"
+    )
+    investments_pd.fillna("")
+    investments_pd.to_csv(_JOURNAL_PATH, index=False)
+    return True

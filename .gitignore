@@ -55,3 +55,9 @@ Thumbs.db
 # Distribution
 *.whl
 *.tar.gz
+
+# Strategy execution outputs (runtime artifacts)
+*_execution_history.csv
+*_raw.csv
+momentum_df.csv
+returns.csv
