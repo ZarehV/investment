@@ -125,17 +125,37 @@ def get_assets_by_momentum(
     periods: list[int],
     total_periods: int = 12,
 ) -> pd.DataFrame:
-    """Score each symbol by its average cumulative return across look-back periods.
+    """Score each symbol by its average return-to-current across look-back periods.
 
-    For each symbol the function takes the last *total_periods* monthly return
-    observations and computes the cumulative return for every window in
-    *periods*, then averages those values into a single momentum score.
+    ``returns_pd`` is produced by :func:`get_return`, which stores for every
+    historical bar the cumulative return from that bar to the *current* market
+    price, i.e.:
+
+    .. code-block:: none
+
+        returns_pd[symbol].iloc[-n]  ==  (current_price - price_n_bars_ago)
+                                         / price_n_bars_ago
+
+    The momentum score for a symbol is therefore the simple average of these
+    already-cumulative returns at each look-back horizon::
+
+        score = mean( returns_pd[s].iloc[-p]  for p in periods )
+
+    Example with ``periods = [3, 6, 9, 12]`` monthly bars:
+
+        score = (3-mo return + 6-mo return + 9-mo return + 12-mo return) / 4
+
+    This matches the dual-momentum convention used in
+    :func:`~investment.strategies.momentum_rider.momentum_rider_flow`.
 
     Args:
         symbols: Ticker symbols to score.
         returns_pd: Return DataFrame as produced by :func:`get_return`.
-        periods: List of look-back lengths in months (e.g. ``[3, 6, 9, 12]``).
-        total_periods: Number of recent observations to consider.
+        periods: Look-back lengths in bars (e.g. ``[3, 6, 9, 12]`` for
+            monthly data).  Each value selects the bar that many positions
+            from the end of the series.
+        total_periods: Minimum number of observations required to score a
+            symbol; symbols with fewer observations are skipped.
 
     Returns:
         DataFrame with columns ``symbol`` and ``momentum_score``, sorted
@@ -147,7 +167,9 @@ def get_assets_by_momentum(
         last_n = returns_pd[symbol].dropna()[-total_periods:]
         if len(last_n) < total_periods:
             continue
-        total = sum((1 + last_n[-period:]).prod() - 1 for period in periods)
+        # Each entry in last_n is the cumulative return from that bar to today.
+        # The n-period return is directly at iloc[-n]; no compounding needed.
+        total = sum(float(last_n.iloc[-period]) for period in periods)
         momentum_scores[symbol] = total / len(periods)
 
     momentum_df = pd.DataFrame.from_dict(
