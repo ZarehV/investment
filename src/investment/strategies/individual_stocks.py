@@ -1,8 +1,16 @@
+"""Individual-stocks momentum strategy.
+
+Ranks a configurable set of individual equities by momentum score and
+allocates capital equally across all of them, computing both a long-term
+(90-day) and a short-term (15-day) support level for each position.
+"""
+
 import os
 from datetime import datetime, timedelta
 
 import pandas as pd
 
+from investment.logging import get_logger
 from investment.strategies.common import (
     clustered_lows,
     get_all_data,
@@ -14,10 +22,20 @@ from investment.strategies.common import (
     swing_lows,
 )
 
+logger = get_logger(__name__)
+
 EXECUTION_HISTORY = "individual_stocks_execution_history.csv"
 
 
 def check_investment_percentage(total_list: int) -> float:
+    """Return the equal-weight allocation fraction for a basket of *total_list* assets.
+
+    Args:
+        total_list: Number of assets in the portfolio.
+
+    Returns:
+        Allocation percentage as a plain number, e.g. ``25.0`` for four assets.
+    """
     return 100 / total_list
 
 
@@ -28,30 +46,45 @@ def prep_investment_breakdown(
     score_threshold: float,
     momentum_df: pd.DataFrame,
 ) -> None:
+    """Calculate per-symbol allocations and print the investment breakdown.
+
+    For each symbol the function fetches the current price, derives a
+    long-term support (90-day clustered lows) and a short-term support
+    (15-day swing lows), then prints and persists the allocation to the
+    execution-history CSV.
+
+    Args:
+        symbols_list: Ticker symbols to allocate capital across.
+        investment_capital: Total capital to deploy (in dollars).
+        hold_symbol: Ticker to use when a position is held in cash.
+        score_threshold: Minimum momentum score required to invest.
+        momentum_df: Scored DataFrame from
+            :func:`~investment.strategies.common.get_assets_by_momentum`.
+    """
     investment_pct = check_investment_percentage(len(symbols_list))
-    investment_allocation = {}
+    investment_allocation: dict[str, dict] = {}
     momentum_lookup = momentum_df.set_index("symbol")["momentum_score"].to_dict()
 
     for symbol in symbols_list:
         stock = get_symbol_current_data(symbol)
-        price = stock.info["regularMarketPrice"]
+        price: float = stock.info["regularMarketPrice"]
 
-        # Long-term support (90 days) — for bi-weekly rebalancing decisions
+        # Long-term support (90 days) — for bi-weekly rebalancing decisions.
         long_data_df = get_all_data(symbol, datetime.today() - timedelta(days=90), "1d")
         long_swing_lows_df = swing_lows(long_data_df)
         long_zones = clustered_lows(long_data_df)
         if not long_zones.empty:
             best_zone = long_zones.sort_values("touches", ascending=False).iloc[0]
-            support_long = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
+            support_long: float = (best_zone["zone_low"] + best_zone["zone_high"]) / 2
             support_long_date = None
         else:
             support_long = long_swing_lows_df.min()
             support_long_date = long_swing_lows_df.idxmin()
 
-        # Short-term support (15 days) — for weekly stop-loss adjustments
+        # Short-term support (15 days) — for weekly stop-loss adjustments.
         short_data_df = get_all_data(symbol, datetime.today() - timedelta(days=15), "1d")
         short_swing_lows_df = swing_lows(short_data_df)
-        support_short = short_swing_lows_df.min()
+        support_short: float = short_swing_lows_df.min()
         support_short_date = short_swing_lows_df.idxmin()
 
         investment_allocation[symbol] = {
@@ -91,8 +124,9 @@ def prep_investment_breakdown(
 
 
 def individual_stocks_flow() -> None:
+    """Load configuration and run the individual-stocks strategy end-to-end."""
     config = load_config(os.getenv("CONFIG_PATH"))
-    print("Loaded configuration")
+    logger.info("Loaded configuration")
     start_date = datetime.today() - timedelta(days=365 * 1.1)
     symbols = list(config["individual_stocks"]["assets"].keys())
 
