@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import ta
 import yaml
 import yfinance as yf
 from scipy.signal import argrelextrema
@@ -320,3 +321,124 @@ def clustered_lows(
         zones.append((run[0], edges[-1], run[1]))
 
     return pd.DataFrame(zones, columns=["zone_low", "zone_high", "touches"])
+
+
+def _zscore(s: pd.Series) -> pd.Series:
+    """Return the z-score of *s*, or an all-zeros Series when std is zero.
+
+    Args:
+        s: Numeric series to normalise.
+
+    Returns:
+        Z-score series with the same index as *s*.
+    """
+    std = s.std()
+    if pd.isna(std) or std == 0:
+        return pd.Series(0.0, index=s.index)
+    return (s - s.mean()) / std
+
+
+def get_short_term_momentum_score(
+    symbols: list[str],
+    closes: pd.DataFrame,
+    roc_periods: list[int] | None = None,
+    rsi_period: int = 14,
+    roc_weight: float = 0.7,
+    rsi_weight: float = 0.3,
+) -> pd.DataFrame:
+    """Score each symbol by a composite short-term momentum signal.
+
+    Combines a multi-period Rate-of-Change (ROC) with an RSI-deviation
+    component, both z-score normalised across the universe before weighting.
+    This is suited to swing-trading horizons of days to ~3 weeks using daily
+    price bars.
+
+    **ROC component** — average cumulative return over *roc_periods* look-back
+    windows::
+
+        roc = mean((close[-1] - close[-N]) / close[-N]  for N in roc_periods)
+
+    **RSI deviation component** — distance of the current RSI from the neutral
+    50 level, scaled to ``[-1, +1]``::
+
+        rsi_dev = (RSI_{rsi_period}[-1] - 50) / 50
+
+    Both components are z-score normalised across the symbol universe before
+    the weighted sum is taken::
+
+        score = roc_weight * z(roc) + rsi_weight * z(rsi_dev)
+
+    Symbols with fewer bars than ``max(roc_periods) + rsi_period`` are skipped.
+
+    Example usage::
+
+        from datetime import datetime, timedelta
+        from investment.strategies.common import get_closing_data, get_short_term_momentum_score
+
+        closes = get_closing_data(symbols, datetime.today() - timedelta(days=60), interval="1d")
+        scores = get_short_term_momentum_score(symbols, closes)
+
+    Args:
+        symbols: Ticker symbols to score.
+        closes: Daily closing-price DataFrame as produced by
+            :func:`get_closing_data` — one column per symbol, indexed by date.
+        roc_periods: Look-back lengths in trading days for the ROC component.
+            Defaults to ``[5, 10, 20]``.
+        rsi_period: Look-back window for the RSI calculation (default ``14``).
+        roc_weight: Weight applied to the z-scored ROC component (default ``0.7``).
+        rsi_weight: Weight applied to the z-scored RSI-deviation component
+            (default ``0.3``).
+
+    Returns:
+        DataFrame with columns ``symbol`` and ``momentum_score``, sorted
+        descending by score.  Returns an empty DataFrame (same columns) when
+        no symbol has sufficient history.
+    """
+    if roc_periods is None:
+        roc_periods = [5, 10, 20]
+
+    min_bars = max(roc_periods) + rsi_period
+    logger.info(
+        "Calculating short-term momentum scores",
+        extra={"symbols": symbols, "roc_periods": roc_periods, "min_bars": min_bars},
+    )
+
+    roc_raw: dict[str, float] = {}
+    rsi_raw: dict[str, float] = {}
+
+    for symbol in symbols:
+        if symbol not in closes.columns:
+            logger.warning("Symbol missing from closes DataFrame", extra={"symbol": symbol})
+            continue
+
+        series = closes[symbol].dropna()
+        if len(series) < min_bars:
+            logger.warning(
+                "Insufficient data for short-term momentum",
+                extra={"symbol": symbol, "bars": len(series), "required": min_bars},
+            )
+            continue
+
+        current = float(series.iloc[-1])
+        roc_values = [
+            (current - float(series.iloc[-n])) / float(series.iloc[-n]) for n in roc_periods
+        ]
+        roc_raw[symbol] = sum(roc_values) / len(roc_values)
+
+        rsi_series = ta.momentum.RSIIndicator(close=series, window=rsi_period).rsi().dropna()
+        if rsi_series.empty:
+            logger.warning("RSI could not be computed", extra={"symbol": symbol})
+            continue
+        rsi_raw[symbol] = (float(rsi_series.iloc[-1]) - 50.0) / 50.0
+
+    common_symbols = [s for s in roc_raw if s in rsi_raw]
+    if not common_symbols:
+        return pd.DataFrame(columns=["symbol", "momentum_score"])
+
+    roc_series = pd.Series({s: roc_raw[s] for s in common_symbols})
+    rsi_series_universe = pd.Series({s: rsi_raw[s] for s in common_symbols})
+
+    composite = roc_weight * _zscore(roc_series) + rsi_weight * _zscore(rsi_series_universe)
+
+    result = composite.rename("momentum_score").reset_index().rename(columns={"index": "symbol"})
+    return result.sort_values(by="momentum_score", ascending=False).reset_index(drop=True)
