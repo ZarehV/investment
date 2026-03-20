@@ -109,18 +109,33 @@ def prep_investment_breakdown(
             "support_short_date": support_short_date,
         }
 
-    for symbol, allocation in investment_allocation.items():
-        print(f"Investment for {symbol}:")
-        print(f"  Momentum Score: {allocation['momentum_score']}")
-        print(f"  Short-term Momentum Score: {allocation['short_term_momentum_score']}")
-        print(f"  Price: {allocation['price']}")
-        print(f"  Amount to Invest: {allocation['amount_to_invest']}")
-        print(f"  Number of Shares: {allocation['num_shares']}")
-        print(f"  Investment Percentage: {allocation['investment_pct']}")
-        print(f"  Support (90d): {allocation['support_long']}  [{allocation['support_long_date']}]")
-        print(
-            f"  Support (15d): {allocation['support_short']}  [{allocation['support_short_date']}]"
-        )
+    display_df = pd.DataFrame.from_dict(investment_allocation, orient="index")[
+        [
+            "momentum_score",
+            "short_term_momentum_score",
+            "price",
+            "num_shares",
+            "amount_to_invest",
+            "investment_pct",
+            "support_long",
+            "support_short",
+        ]
+    ].rename(
+        columns={
+            "momentum_score": "Long Mom.",
+            "short_term_momentum_score": "Short Mom.",
+            "price": "Price",
+            "num_shares": "Shares",
+            "amount_to_invest": "Amount ($)",
+            "investment_pct": "Alloc",
+            "support_long": "Sup 90d",
+            "support_short": "Sup 15d",
+        }
+    )
+    display_df.index.name = "Symbol"
+    for col in ["Long Mom.", "Short Mom.", "Price", "Sup 90d", "Sup 15d"]:
+        display_df[col] = pd.to_numeric(display_df[col], errors="coerce").round(4)
+    print(display_df.to_string())
 
     if os.path.exists(EXECUTION_HISTORY):
         df = pd.DataFrame.from_dict(investment_allocation, orient="index")
