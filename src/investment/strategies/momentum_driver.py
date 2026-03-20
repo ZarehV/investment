@@ -21,6 +21,7 @@ from investment.strategies.common import (
     get_assets_by_momentum,
     get_closing_data,
     get_return,
+    get_short_term_momentum_score,
     get_top_assets,
     load_config,
     swing_lows,
@@ -58,6 +59,11 @@ def prep_investment_breakdown(
     """
     investment_allocation: dict[str, dict] = {}
     hold_folds = 0
+
+    symbols_to_score = top_momentum_df["symbol"].tolist()
+    st_closes = get_closing_data(symbols_to_score, datetime.today() - timedelta(days=60), "1d")
+    st_scores_df = get_short_term_momentum_score(symbols_to_score, st_closes)
+    st_score_lookup: dict[str, float] = st_scores_df.set_index("symbol")["momentum_score"].to_dict()
 
     for _, row in top_momentum_df.iterrows():
         symbol: str = row["symbol"]
@@ -100,6 +106,7 @@ def prep_investment_breakdown(
         investment_allocation[symbol] = {
             "price": price,
             "momentum_score": score,
+            "short_term_momentum_score": st_score_lookup.get(symbol, "N/A"),
             "amount_to_invest": investment_capital * investment_pct,
             "num_shares": int((investment_capital * investment_pct) / price),
             "investment_pct": investment_pct,
@@ -143,6 +150,7 @@ def prep_investment_breakdown(
         investment_allocation[hold_symbol] = {
             "price": price,
             "momentum_score": "N/A",
+            "short_term_momentum_score": "N/A",
             "amount_to_invest": investment_capital * investment_pct,
             "num_shares": int((investment_capital * investment_pct) / price),
             "investment_pct": investment_pct,
@@ -155,6 +163,7 @@ def prep_investment_breakdown(
     for symbol, allocation in investment_allocation.items():
         print(f"Investment for {symbol}:")
         print(f"  Momentum Score: {allocation['momentum_score']}")
+        print(f"  Short-term Momentum Score: {allocation['short_term_momentum_score']}")
         print(f"  Price: {allocation['price']}")
         print(f"  Amount to Invest: {allocation['amount_to_invest']}")
         print(f"  Number of Shares: {allocation['num_shares']}")
